@@ -22,8 +22,7 @@ void APSP::run() {
     const bool src_all = srcs.size() == 0;
     const count num_srcs = src_all ? n : srcs.size();
     std::vector<edgeweight> distanceVector(n, 0.0);
-    distances.resize(num_srcs, distanceVector);
-
+    distances.resize(num_srcs * n);
     count nThreads = omp_get_max_threads();
     sssps.resize(nThreads);
 #pragma omp parallel
@@ -41,9 +40,11 @@ void APSP::run() {
         count source = src_all ? source_idx : srcs[source_idx];
         sssp->setSource(source);
         sssp->run();
-        distances[source_idx] = sssp->getDistances();
+        auto result = sssp->getDistances();
+        std::move(result.begin(), result.end(), distances.begin() + source_idx * n);
     }
-
+    DEBUG("APSP distance matrix memory size = ",
+          sizeof(std::vector<edgeweight>) + (sizeof(edgeweight) * distances.size()));
     hasRun = true;
 }
 

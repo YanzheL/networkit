@@ -54,7 +54,7 @@ class APSP : public Algorithm {
      * @return The shortest-path distances from each node to any other node in
      * the graph.
      */
-    std::vector<std::vector<edgeweight>> getDistances() const {
+    const std::vector<edgeweight> &getDistances() const {
         assureFinished();
         return distances;
     }
@@ -66,7 +66,7 @@ class APSP : public Algorithm {
      */
     edgeweight getDistance(node u, node v) const {
         assureFinished();
-        return distances[u][v];
+        return distances[u * G.upperNodeIdBound() + v];
     }
 
     /**
@@ -74,9 +74,9 @@ class APSP : public Algorithm {
      */
     virtual bool isParallel() const override { return true; }
 
-  protected:
+protected:
     const Graph &G;
-    std::vector<std::vector<edgeweight>> distances;
+    std::vector<edgeweight> distances;
     std::vector<std::unique_ptr<SSSP>> sssps;
     std::vector<count> srcs;
 };

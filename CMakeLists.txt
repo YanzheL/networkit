@@ -11,7 +11,7 @@ option(NETWORKIT_BUILD_TESTS "Build NetworKit C++ tests" OFF)
 option(NETWORKIT_QUIET_LOGGING "Set log level to QUIET by default (can still be changed at run time)" OFF)
 option(NETWORKIT_STATIC "Build static libraries" OFF)
 option(NETWORKIT_MONOLITH "Build single library (and tests is requested; required for shared lib)" ON)
-option(NETWORKIT_NATIVE "Optimize for native architecture (often better performance)" OFF)
+option(NETWORKIT_NATIVE "Optimize for native architecture (often better performance)" ON)
 option(NETWORKIT_WARNINGS "Issue more warnings" OFF)
 option(NETWORKIT_WARNINGS_AS_ERRORS "Treat warnings as errors (except deprecated)" OFF)
 option(NETWORKIT_CLANG_TIDY "Check code with clang-tidy" OFF)
@@ -24,7 +24,7 @@ set(NETWORKIT_RELEASE_LOGGING "AUTO" CACHE STRING "Do not compile log messages a
 set(NETWORKIT_PYTHON_RPATH "" CACHE STRING "Build specific rpath references.")
 set(NETWORKIT_EXT_TLX "" CACHE STRING "Absolute path for external tlx-library. If not set, extlibs/tlx is used")
 
-set (NETWORKIT_CXX_STANDARD "11" CACHE STRING "CXX Version to compile with. Currently fixed to 11")
+set(NETWORKIT_CXX_STANDARD "17" CACHE STRING "CXX Version to compile with. Currently fixed to 11")
 
 # Allow user to set installation paths relative to CMAKE_INSTALL_PREFIX
 
@@ -98,11 +98,14 @@ else()
 endif()
 
 # Checking sanitizer options; in both cases we include 'undefined'
-set(NETWORKIT_CXX_SANITIZERS "")
-if ("${NETWORKIT_WITH_SANITIZERS}" STREQUAL "address")
-	set(NETWORKIT_CXX_SANITIZERS "address,undefined")
-elseif ("${NETWORKIT_WITH_SANITIZERS}" STREQUAL "leak")
-	set(NETWORKIT_CXX_SANITIZERS "address,leak,undefined")
+set(NETWORKIT_CXX_SANITIZERS "undefined")
+set(NETWORKIT_LINK_FLAGS "-lubsan ${NETWORKIT_LINK_FLAGS}")
+if("${NETWORKIT_WITH_SANITIZERS}" STREQUAL "address")
+	set(NETWORKIT_CXX_SANITIZERS "${NETWORKIT_CXX_SANITIZERS},address")
+	set(NETWORKIT_LINK_FLAGS "-lasan ${NETWORKIT_LINK_FLAGS}")
+elseif("${NETWORKIT_WITH_SANITIZERS}" STREQUAL "leak")
+	set(NETWORKIT_CXX_SANITIZERS "${NETWORKIT_CXX_SANITIZERS},address,leak")
+	set(NETWORKIT_LINK_FLAGS "-lasan ${NETWORKIT_LINK_FLAGS}")
 elseif(NOT "${NETWORKIT_WITH_SANITIZERS}" STREQUAL "")
 	message(FATAL_ERROR "Unsupported option ${NETWORKIT_WITH_SANITIZERS}")
 endif()

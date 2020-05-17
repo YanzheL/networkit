@@ -9,14 +9,16 @@ import math
 import os
 import tempfile
 import warnings
-
+from libcpp.vector cimport vector
+import numpy as np
+cimport numpy as np
 
 try:
 	import pandas
 except:
 	warnings.warn("WARNING: module 'pandas' not found, some functionality will be restricted",
 			ReducedFunctionalityWarning)
-
+np.import_array()
 
 # C++ operators
 from cython.operator import dereference, preincrement
@@ -1777,7 +1779,7 @@ cdef class SSSP(Algorithm):
 			from warnings import warn
 			warn("moveOut parameter is deprecated and not used")
 
-		return (<_SSSP*>(self._this)).getDistances()
+		return np.asarray((<_SSSP*>(self._this)).getDistances())
 
 	def distance(self, t):
 		"""
@@ -2192,7 +2194,7 @@ cdef extern from "<networkit/distance/APSP.hpp>":
 	cdef cppclass _APSP "NetworKit::APSP"(_Algorithm):
 		_APSP(_Graph G) except +
 		_APSP(_Graph G, vector[count] srcs) except +
-		vector[vector[edgeweight]] getDistances() except +
+		vector[edgeweight]& getDistances() except +
 		edgeweight getDistance(node u, node v) except +
 
 cdef class APSP(Algorithm):
@@ -2208,16 +2210,23 @@ cdef class APSP(Algorithm):
 		The graph.
     """
 	cdef Graph _G
+	cdef vector[count] _srcs
+	cdef count _num_srcs
 
 	def __cinit__(self, Graph G, vector[count] srcs = vector[count]()):
 		self._G = G
 		if srcs.empty():
+			self._num_srcs = G.upperNodeIdBound()
 			self._this = new _APSP(G._this)
 		else:
+			self._srcs = srcs
+			self._num_srcs = srcs.size()
 			self._this = new _APSP(G._this, srcs)
 
 	def __dealloc__(self):
 		self._G = None
+		self._srcs.clear()
+		self._num_srcs = 0
 
 	def getDistances(self):
 		""" Returns a vector of vectors of distances between each node pair.
@@ -2227,7 +2236,18 @@ cdef class APSP(Algorithm):
  	 	vector of vectors
  	 		The shortest-path distances from each node to any other node in the graph.
 		"""
-		return (<_APSP*>(self._this)).getDistances()
+		# cdef vector[vector[edgeweight]] vec = (<_APSP*>(self._this)).getDistances()
+		# cdef double *vec_ptr = &auto[0]
+		# cdef double[::1] vec_view = <double[:vec.size()]>vec_ptr
+		# vec_npr = np.asarray(vec_view)
+		cdef void* data = (<_APSP*>(self._this)).getDistances().data()
+		cdef np.npy_intp dims[2]
+		dims[0] = <np.npy_intp> self._num_srcs
+		dims[1] = <np.npy_intp> self._G.upperNodeIdBound()
+		arr = np.PyArray_SimpleNewFromData(2, dims, np.NPY_DOUBLE, data)
+		arr[arr > 1e20] = np.nan
+		arr[arr < 1e-20] = 0
+		return arr
 
 	def getDistance(self, node u, node v):
 		""" Returns the length of the shortest path from source 'u' to target `v`.

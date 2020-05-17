@@ -22,14 +22,14 @@
 
 namespace NetworKit {
 
-DynAPSP::DynAPSP(Graph& G) : APSP(G) {}
+DynAPSP::DynAPSP(Graph &G) : APSP(G) {}
 
 /**
  * Run method that stores a single shortest path for each node pair and stores shortest distances
  */
 void DynAPSP::run() {
     distances.resize(G.upperNodeIdBound());
-    G.parallelForNodes([&](node u){
+    G.parallelForNodes([&](node u) {
         std::unique_ptr<SSSP> sssp;
         if (G.isWeighted()) {
             sssp.reset(new Dijkstra(G, u));
@@ -37,19 +37,21 @@ void DynAPSP::run() {
             sssp.reset(new BFS(G, u));
         }
         sssp->run();
-        distances[u] = sssp->getDistances();
+        auto res = sssp->getDistances();
+        std::copy(res.begin(), res.end(), distances.begin() + u * G.upperNodeIdBound());
     });
-  hasRun = true;
+    hasRun = true;
 }
 
 std::vector<node> DynAPSP::getPath(node u, node v) {
     std::vector<node> path = {};
-    if (distances[u][v] < std::numeric_limits<edgeweight>::max()) {
+    count n = G.upperNodeIdBound();
+    if (distances[u * n + v] < std::numeric_limits<edgeweight>::max()) {
         node current = v;
         while (current != u) {
             path.push_back(current);
             G.forInEdgesOf(current, [&](node z, edgeweight w) {
-                if (distances[u][current] == distances[u][z] + w) {
+                if (distances[u * n + current] == distances[u * n + z] + w) {
                     current = z;
                 }
             });
@@ -60,46 +62,49 @@ std::vector<node> DynAPSP::getPath(node u, node v) {
     return path;
 }
 
-
-
 void DynAPSP::update(GraphEvent event) {
     visitedPairs = 0;
     INFO("Entering update");
     node u = event.u;
     node v = event.v;
-    edgeweight weightuv = G.weight(u,v);
-    if (!(event.type==GraphEvent::EDGE_ADDITION || (event.type==GraphEvent::EDGE_WEIGHT_INCREMENT && event.w < 0))) {
-        throw std::runtime_error("event type not allowed. Edge insertions and edge weight decreases only.");
+    edgeweight weightuv = G.weight(u, v);
+    if (!(event.type == GraphEvent::EDGE_ADDITION
+          || (event.type == GraphEvent::EDGE_WEIGHT_INCREMENT && event.w < 0))) {
+        throw std::runtime_error(
+            "event type not allowed. Edge insertions and edge weight decreases only.");
     }
-    if (weightuv < distances[u][v]) {
+    count upper_node_id_bound = G.upperNodeIdBound();
+    if (weightuv < distances[u * upper_node_id_bound + v]) {
         // initializations
-        count z = G.upperNodeIdBound();
-        std::vector<node> source_nodes(z);
-        std::vector<node> n_sources(z, 0);
+        std::vector<node> source_nodes(upper_node_id_bound);
+        std::vector<node> n_sources(upper_node_id_bound, 0);
         std::queue<node> Q;
         std::vector<bool> enqueued(G.upperNodeIdBound(), false);
         // phase 1: find affected source nodes using bfs
         count i = 0;
         std::queue<node> bfsQ;
-        std::vector<bool> visited(z, false);
-        INFO("Phase 1. distances[", u,"][", v,"] = ", distances[u][v], ", and G.weight", u,", ", v," = ",G.weight(u,v));
-        distances[u][v] = weightuv;
-        if(!G.isDirected()) {
-            distances[v][u] = distances[u][v];
+        std::vector<bool> visited(upper_node_id_bound, false);
+        INFO("Phase 1. distances[", u, "][", v, "] = ", distances[u * upper_node_id_bound + v],
+             ", and G.weight", u, ", ", v, " = ", G.weight(u, v));
+        distances[u * upper_node_id_bound + v] = weightuv;
+        if (!G.isDirected()) {
+            distances[v * upper_node_id_bound + u] = distances[u * upper_node_id_bound + v];
         }
         bfsQ.push(u);
         INFO("Entering bfs");
-        while (! bfsQ.empty()) {
+        while (!bfsQ.empty()) {
             node x = bfsQ.front();
             bfsQ.pop();
             DEBUG("Dequeueing node ", x);
             G.forInNeighborsOf(x, [&](node w, edgeweight) { // identify and process neighbors w of x
-                if (visited[w] == false && distances[w][v] > distances[w][u] + weightuv) {
+                if (visited[w] == false
+                    && distances[w * upper_node_id_bound + v]
+                           > distances[w * upper_node_id_bound + u] + weightuv) {
                     bfsQ.push(w);
                     DEBUG("Pushing neighbor ", w);
                     visited[w] = true;
                     source_nodes[i] = w;
-                    i ++;
+                    i++;
                 }
             });
         }
@@ -111,33 +116,46 @@ void DynAPSP::update(GraphEvent event) {
         std::stack<node> stack;
         stack.push(v);
         visited.clear();
-        visited.resize(z, false);
-        while (! stack.empty()) {
+        visited.resize(upper_node_id_bound, false);
+        while (!stack.empty()) {
             node y = stack.top();
             if (!visited[y]) {
-                // we leave y in the stack (so that we know when we're done visiting the subtree rooted in y)
+                // we leave y in the stack (so that we know when we're done visiting the subtree
+                // rooted in y)
                 n_sources[y] = n_sources[Pred[y]];
                 visited[y] = true;
                 for (count c = 0; c < n_sources[y]; c++) {
                     node s = source_nodes[c];
-                    if (distances[s][y] > distances[s][u] + weightuv + distances[v][y]) {
-                        distances[s][y] = distances[s][u] + weightuv + distances[v][y];
-                        if(!G.isDirected()) {
-                            distances[y][s] = distances[s][y];
+                    if (distances[s * upper_node_id_bound + y]
+                        > distances[s * upper_node_id_bound + u] + weightuv
+                              + distances[v * upper_node_id_bound + y]) {
+                        distances[s * upper_node_id_bound + y] =
+                            distances[s * upper_node_id_bound + u] + weightuv
+                            + distances[v * upper_node_id_bound + y];
+                        if (!G.isDirected()) {
+                            distances[y * upper_node_id_bound + s] =
+                                distances[s * upper_node_id_bound + y];
                         }
                     } else {
                         std::swap(source_nodes[c], source_nodes[n_sources[y] - 1]);
-                        c --;
-                        n_sources[y] --;
+                        c--;
+                        n_sources[y]--;
                     }
                 }
                 // adding successors of y to the stack
-                G.forNeighborsOf(y, [&](node w, edgeweight weightyw){
-                    // we go down the BFS tree rooted in v in a DFS order (the last check is necessary to make sure that (y, w) is an edge of the BFS tree rooted in v)
-                    if (visited[w] == false && distances[u][w] > distances[v][w] + weightuv && distances[v][w] == distances[v][y] + weightyw) {
-                        distances[u][w] = distances[v][w] + weightuv;
-                        if(!G.isDirected()) {
-                            distances[w][u] = distances[u][w];
+                G.forNeighborsOf(y, [&](node w, edgeweight weightyw) {
+                    // we go down the BFS tree rooted in v in a DFS order (the last check is
+                    // necessary to make sure that (y, w) is an edge of the BFS tree rooted in v)
+                    if (visited[w] == false
+                        && distances[u * upper_node_id_bound + w]
+                               > distances[v * upper_node_id_bound + w] + weightuv
+                        && distances[v * upper_node_id_bound + w]
+                               == distances[v * upper_node_id_bound + y] + weightyw) {
+                        distances[u * upper_node_id_bound + w] =
+                            distances[v * upper_node_id_bound + w] + weightuv;
+                        if (!G.isDirected()) {
+                            distances[w * upper_node_id_bound + u] =
+                                distances[u * upper_node_id_bound + w];
                         }
                         stack.push(w);
                         Pred[w] = y;
@@ -164,7 +182,9 @@ void DynAPSP::update(GraphEvent event) {
         // 	}
         //
         // 	G.forNeighborsOf(y, [&](node w, edgeweight weightyw){
-        // 		if (distances[u][w] > distances[u][y] + weightyw && distances[v][w] == distances[v][y] + weightyw) { // I also check that y was a predecessor for w in the s.p. from v
+        // 		if (distances[u][w] > distances[u][y] + weightyw && distances[v][w] ==
+        // distances[v][y]
+        // + weightyw) { // I also check that y was a predecessor for w in the s.p. from v
         // 			distances[u][w] = distances[u][y] + weightyw;
         // 			Pred[w] = y;
         // 			if(!G.isDirected()) {
@@ -177,15 +197,14 @@ void DynAPSP::update(GraphEvent event) {
     }
 }
 
-void DynAPSP::updateBatch(const std::vector<GraphEvent>& batch) {
-  for(auto e : batch){
-    update(e);
-  }
+void DynAPSP::updateBatch(const std::vector<GraphEvent> &batch) {
+    for (auto e : batch) {
+        update(e);
+    }
 }
 
 count DynAPSP::visPairs() {
     return visitedPairs;
 }
-
 
 } /* namespace NetworKit */

@@ -20,7 +20,7 @@ std::vector<edgeweight> SSSP::getDistances(bool moveOut) {
     return moveOut ? std::move(distances) : distances;
 }
 
-const std::vector<edgeweight> &SSSP::getDistances() {
+const std::vector<edgeweight>& SSSP::getDistances() {
     return distances;
 }
 
